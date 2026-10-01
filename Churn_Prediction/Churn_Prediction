@@ -1,1 +1,127 @@
 
+# System Design Document: Machine Learning Churn Prediction Engine
+
+A high-level architecture and system design specification for predicting bank customer churn using baseline **Logistic Regression** and an **Artificial Neural Network (ANN)**.
+
+---
+
+## 1. System Architecture Overview
+
+The pipeline processes raw tabular customer records, applies feature transformation and normalization pipelines, trains candidate classification models, and generates inference outputs.
+
+```
++------------------+     +-----------------------+     +------------------------+
+| Data Source      | --> | Preprocessing &       | --> | Feature Engineering &  |
+| Churn_Modelling  |     | Cleaning              |     | Scaling                |
++------------------+     +-----------------------+     +------------------------+
+                                                                   |
+                                                                   v
++------------------+     +-----------------------+     +------------------------+
+| Inference &      | <-- | Model Evaluation &    | <-- | Model Training         |
+| Decision Metrics |     | Metrics Benchmarking  |     | (Logistic & Neural Net)|
++------------------+     +-----------------------+     +------------------------+
+```
+
+---
+
+## 2. Component Specifications
+
+### 2.1 Ingestion & Cleaning Layer
+* **Source Dataset**: `Churn_Modelling.csv` ($N = 10,000$ records, $14$ attributes).
+* **Data Integrity Checks**: Row validation ensuring non-null entries (`data.isnull().sum() == 0`).
+* **Column Pruning**: Drops non-predictive keys (`RowNumber`, `CustomerId`, `Surname`).
+
+### 2.2 Preprocessing & Feature Engineering
+* **Categorical Encoding**:
+  * **Gender**: Binary Label Encoding ($\text{Male} \rightarrow 1, \text{Female} \rightarrow 0$).
+  * **Geography**: Multi-class One-Hot Encoding via `ColumnTransformer(drop='first')` to resolve the dummy variable trap.
+* **Feature Scaling**: Z-score normalization applied via `StandardScaler`:
+  $$z = \frac{x - \mu}{\sigma}$$
+
+---
+
+## 3. Machine Learning Models Specification
+
+```
+                  +-----------------------------------+
+                  |      11 Preprocessed Features     |
+                  +-----------------------------------+
+                                    |
+            +-----------------------+-----------------------+
+            |                                               |
+            v                                               v
++-----------------------+                       +-----------------------+
+|  Logistic Regression  |                       |  ANN Architecture     |
+|                       |                       |  Input Layer: 11      |
+|  Solver: L-BFGS       |                       |  Hidden Layer 1: 6    |
+|  Loss: Binary Cross.  |                       |  Hidden Layer 2: 6    |
+|  Strategy: Baseline   |                       |  Output Layer: 1      |
++-----------------------+                       +-----------------------+
+```
+
+### 3.1 Model A: Baseline Logistic Regression
+* **Split Configuration**: 75% Training ($N = 7,500$), 25% Testing ($N = 2,500$).
+* **Optimization Algorithm**: L-BFGS solver.
+* **Convergence Behavior**: Reached maximum iterations ceiling (`ConvergenceWarning: lbfgs failed to converge`), indicating non-linear feature interactions requiring scaling/regularization adjustments.
+
+### 3.2 Model B: Artificial Neural Network (Deep Learning)
+* **Split Configuration**: 80% Training ($N = 8,000$), 20% Testing ($N = 2,000$).
+* **Layer Design**:
+  * **Input Layer**: $11$ continuous/encoded features.
+  * **Hidden Layer 1**: $6$ Dense units ($\text{ReLU}$ activation, $\text{Uniform}$ weight initialization).
+  * **Hidden Layer 2**: $6$ Dense units ($\text{ReLU}$ activation, $\text{Uniform}$ weight initialization).
+  * **Output Layer**: $1$ Dense unit ($\text{Sigmoid}$ activation, threshold = $0.5$).
+* **Hyperparameters**:
+  * **Loss Function**: Binary Cross-Entropy
+  * **Optimizer**: Adam ($\eta$ default)
+  * **Batch Size**: 10
+  * **Epochs**: 100
+
+---
+
+## 4. Evaluation & Metrics Summary
+
+### 4.1 System Performance Comparison
+
+| Attribute / Metric | Baseline Model (Logistic) | Deep Learning Model (ANN) |
+| :--- | :--- | :--- |
+| **Training Records** | 7,500 | 8,000 |
+| **Test Records** | 2,500 | 2,000 |
+| **Overall Accuracy** | 78.0% | **86.0%** |
+| **Class 1 (Churn) Recall** | 6.0% | **75.0%** |
+| **Class 1 (Churn) Precision** | 32.0% | **48.0%** |
+| **Class 1 F1-Score** | 0.10 | **0.58** |
+| **Training Loss** | N/A | **0.3439** |
+
+---
+
+### 4.2 Confusion Matrix Formulations
+
+#### Logistic Regression Training Set Output ($N = 7,500$)
+$$
+\mathbf{CM}_{\text{Logistic}} = 
+\begin{bmatrix}
+5842 & 130 \\
+1418 & 110
+\end{bmatrix}
+$$
+
+#### ANN Test Set Classification Report ($N = 2,000$)
+```
+              precision    recall  f1-score   support
+
+       False       0.96      0.88      0.92      1741
+        True       0.48      0.75      0.58       259
+
+    accuracy                           0.86      2000
+   macro avg       0.72      0.81      0.75      2000
+weighted avg       0.90      0.86      0.87      2000
+```
+
+---
+
+## 5. Architectural Recommendations
+
+1. **Production Model Selection**: Deploy the **ANN model**. It achieves an 86% accuracy rate and dramatically higher churn capture (75% recall vs. 6% on Logistic Regression).
+2. **Preprocessing Pipeline Enforcement**: Integrate `StandardScaler` directly into a production `Pipeline` export (e.g., via `joblib` or ONNX format) to avoid data leakage during real-time inference.
+3. **Threshold Tuning**: Adjust the default output sigmoid threshold ($\tau = 0.5$) based on the operational trade-off between customer retention campaigns (False Positives) and uncaptured churn (False Negatives).
